@@ -57,7 +57,7 @@ public class MainActivity extends AppCompatActivity {
     private void configOpenGLEs2(){
         if(enableOpenGl2()){
             glSurfaceView.setEGLContextClientVersion(2);
-            glSurfaceView.setRenderer(new AirHockeyRenderer(this));
+            glSurfaceView.setRenderer(new com.airhockey.android.AirHockeyRenderer(this));
             rendererSet=true;
         }else {
             Toast.makeText(this,"设备不支持OpenGL ES 2.0",Toast.LENGTH_SHORT).show();

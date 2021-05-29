@@ -1,11 +1,26 @@
-package com.example.openglesdemo;
+/***
+ * Excerpted from "OpenGL ES for Android",
+ * published by The Pragmatic Bookshelf.
+ * Copyrights apply to this code. It may not be used to create training material,
+ * courses, books, articles, and the like. Contact us if you are in doubt.
+ * We make no guarantees that this code is fit for any purpose.
+ * Visit http://www.pragmaticprogrammer.com/titles/kbogla for more book information.
+ ***/
+package com.airhockey.android;
 
-import android.content.Context;
-import android.opengl.GLES20;
-import android.opengl.GLSurfaceView;
-
-import com.example.openglesdemo.util.ShaderHelper;
-import com.example.openglesdemo.util.TextResourceReader;
+import static android.opengl.GLES20.GL_COLOR_BUFFER_BIT;
+import static android.opengl.GLES20.GL_FLOAT;
+import static android.opengl.GLES20.GL_LINES;
+import static android.opengl.GLES20.GL_POINTS;
+import static android.opengl.GLES20.GL_TRIANGLE_FAN;
+import static android.opengl.GLES20.glClear;
+import static android.opengl.GLES20.glClearColor;
+import static android.opengl.GLES20.glDrawArrays;
+import static android.opengl.GLES20.glEnableVertexAttribArray;
+import static android.opengl.GLES20.glGetAttribLocation;
+import static android.opengl.GLES20.glUseProgram;
+import static android.opengl.GLES20.glVertexAttribPointer;
+import static android.opengl.GLES20.glViewport;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -14,98 +29,157 @@ import java.nio.FloatBuffer;
 import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
 
-public class AirHockeyRenderer implements GLSurfaceView.Renderer {
+import android.content.Context;
+import android.opengl.GLSurfaceView.Renderer;
 
+import com.example.openglesdemo.R;
+import com.example.openglesdemo.util.ShaderHelper;
+import com.example.openglesdemo.util.TextResourceReader;
+
+public class AirHockeyRenderer implements Renderer {
+    private static final String A_POSITION = "a_Position";
+    private static final String A_COLOR = "a_Color";
     private static final int POSITION_COMPONENT_COUNT = 2;
+    private static final int COLOR_COMPONENT_COUNT = 3;
     private static final int BYTES_PER_FLOAT = 4;
-    private Context context;
+    private static final int STRIDE =
+            (POSITION_COMPONENT_COUNT + COLOR_COMPONENT_COUNT) * BYTES_PER_FLOAT;
 
-    private  FloatBuffer vertexData;
-    private int programId;
-    private static final String A_POSITION="a_Position";
-    private static final String U_COLOR="u_Color";
-    private int uColorLocation;
+    private final FloatBuffer vertexData;
+    private final Context context;
+
+    private int program;
     private int aPositionLocation;
+    private int aColorLocation;
 
     public AirHockeyRenderer(Context context) {
         this.context = context;
+        /*
         float[] tableVerticesWithTriangles = {
-                // Triangle 1
-                -0.5f, -0.5f,
-                0.5f,  0.5f,
-                -0.5f,  0.5f,
+            // Triangle Fan
+               0,     0,
+            -0.5f, -0.5f,
+             0.5f, -0.5f,
+             0.5f,  0.5f,
+            -0.5f,  0.5f,
+            -0.5f, -0.5f,
 
-                // Triangle 2
-                -0.5f, -0.5f,
-                0.5f, -0.5f,
-                0.5f,  0.5f,
+            // Line 1
+            -0.5f, 0f,
+             0.5f, 0f,
+
+            // Mallets
+            0f, -0.25f,
+            0f,  0.25f
+        };*/
+
+        //
+        // Vertex data is stored in the following manner:
+        //
+        // The first two numbers are part of the position: X, Y
+        // The next three numbers are part of the color: R, G, B
+        //
+        float[] tableVerticesWithTriangles = {
+                // Order of coordinates: X, Y, R, G, B
+
+                // Triangle Fan
+                0f,    0f,   1f,   1f,   1f,
+                -0.5f, -0.5f, 0.7f, 0.7f, 0.7f,
+                0.5f, -0.5f, 0.7f, 0.7f, 0.7f,
+                0.5f,  0.5f, 0.7f, 0.7f, 0.7f,
+                -0.5f,  0.5f, 0.7f, 0.7f, 0.7f,
+                -0.5f, -0.5f, 0.7f, 0.7f, 0.7f,
 
                 // Line 1
-                -0.5f, 0f,
-                0.5f, 0f,
+                -0.5f, 0f, 1f, 0f, 0f,
+                0.5f, 0f, 1f, 0f, 0f,
 
                 // Mallets
-                0f, -0.25f,
-                0f,  0.25f
+                0f, -0.25f, 0f, 0f, 1f,
+                0f,  0.25f, 1f, 0f, 0f
         };
-        //内存从java堆复制到本地堆
+
         vertexData = ByteBuffer
                 .allocateDirect(tableVerticesWithTriangles.length * BYTES_PER_FLOAT)
-                .order(ByteOrder.nativeOrder())
-                .asFloatBuffer();
+                .order(ByteOrder.nativeOrder()).asFloatBuffer();
 
         vertexData.put(tableVerticesWithTriangles);
     }
 
-
     @Override
-    public void onSurfaceCreated(GL10 gl10, EGLConfig eglConfig) {
-        //清空屏幕用的颜色
-        GLES20.glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    public void onSurfaceCreated(GL10 glUnused, EGLConfig config) {
+        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+
         String vertexShaderSource = TextResourceReader
                 .readTextFileFromResource(context, R.raw.simple_vertex_shader);
         String fragmentShaderSource = TextResourceReader
                 .readTextFileFromResource(context, R.raw.simple_fragment_shader);
 
         int vertexShader = ShaderHelper.compileVertexShader(vertexShaderSource);
-        int fragmentShader = ShaderHelper.compileFragmentShader(fragmentShaderSource);
-       //链接程序
-        programId = ShaderHelper.linkProgram(vertexShader, fragmentShader);
-        //使用程序
-        GLES20.glUseProgram(programId);
-        //获取一个Uniform的位置
-        uColorLocation=GLES20.glGetUniformLocation(programId,U_COLOR);
-        //获取属性的位置
-        aPositionLocation=GLES20.glGetAttribLocation(programId,A_POSITION);
-        //从缓存区vertextData找到a_Position的数据，关联属性与顶点数据的数组
+        int fragmentShader = ShaderHelper
+                .compileFragmentShader(fragmentShaderSource);
+
+        program = ShaderHelper.linkProgram(vertexShader, fragmentShader);
+
+
+        glUseProgram(program);
+
+        aPositionLocation = glGetAttribLocation(program, A_POSITION);
+        aColorLocation = glGetAttribLocation(program, A_COLOR);
+
+        // Bind our data, specified by the variable vertexData, to the vertex
+        // attribute at location A_POSITION_LOCATION.
         vertexData.position(0);
-        GLES20.glVertexAttribPointer(aPositionLocation,POSITION_COMPONENT_COUNT,GLES20.GL_FLOAT,false,0,vertexData);
-        //启用能顶点数组
-        GLES20.glEnableVertexAttribArray(aPositionLocation);
+        glVertexAttribPointer(aPositionLocation, POSITION_COMPONENT_COUNT, GL_FLOAT,
+                false, STRIDE, vertexData);
+
+        glEnableVertexAttribArray(aPositionLocation);
+
+        // Bind our data, specified by the variable vertexData, to the vertex
+        // attribute at location A_COLOR_LOCATION.
+        vertexData.position(POSITION_COMPONENT_COUNT);
+        glVertexAttribPointer(aColorLocation, COLOR_COMPONENT_COUNT, GL_FLOAT,
+                false, STRIDE, vertexData);
+
+        glEnableVertexAttribArray(aColorLocation);
     }
 
+    /**
+     * onSurfaceChanged is called whenever the surface has changed. This is
+     * called at least once when the surface is initialized. Keep in mind that
+     * Android normally restarts an Activity on rotation, and in that case, the
+     * renderer will be destroyed and a new one created.
+     *
+     * @param width
+     *            The new width, in pixels.
+     * @param height
+     *            The new height, in pixels.
+     */
     @Override
-    public void onSurfaceChanged(GL10 gl10, int w, int h) {
-        //设置视口
-        GLES20.glViewport(0, 0, w, h);
+    public void onSurfaceChanged(GL10 glUnused, int width, int height) {
+        // Set the OpenGL viewport to fill the entire surface.
+        glViewport(0, 0, width, height);
     }
 
+    /**
+     * OnDrawFrame is called whenever a new frame needs to be drawn. Normally,
+     * this is done at the refresh rate of the screen.
+     */
     @Override
-    public void onDrawFrame(GL10 gl10) {
-        //檫除屏幕上对底所有颜色，并且之前glClearColor()调用定义的颜色填充整个屏幕
-        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
-        //更新着色器代码中的u_color的值
-        GLES20.glUniform4f(uColorLocation,1.0f,1.0f,1.0f,1.0f);
-        //当采用顶点数组方式,顶点数组中的坐标数据和指定的模式，进行绘制
-        GLES20.glDrawArrays(GLES20.GL_TRIANGLES,0,6);
-        //画线
-        GLES20.glUniform4f(uColorLocation,1.0f,0.0f,0.0f,1.0f);
-        GLES20.glDrawArrays(GLES20.GL_LINES,6,2);
-        //画点
-        GLES20.glUniform4f(uColorLocation,0.0f,0.0f,1.0f,1.0f);
-        GLES20.glDrawArrays(GLES20.GL_POINTS,8,1);
-        GLES20.glUniform4f(uColorLocation,0.0f,0.0f,1.0f,1.0f);
-        GLES20.glDrawArrays(GLES20.GL_POINTS,9,1);
+    public void onDrawFrame(GL10 glUnused) {
+        // Clear the rendering surface.
+        glClear(GL_COLOR_BUFFER_BIT);
 
+        // Draw the table.
+        glDrawArrays(GL_TRIANGLE_FAN, 0, 6);
+
+        // Draw the center dividing line.
+        glDrawArrays(GL_LINES, 6, 2);
+
+        // Draw the first mallet.
+        glDrawArrays(GL_POINTS, 8, 1);
+
+        // Draw the second mallet.
+        glDrawArrays(GL_POINTS, 9, 1);
     }
 }
